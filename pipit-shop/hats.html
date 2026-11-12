@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Royale — Шапки</title>
+  <meta name="description" content="Royale, небольшой магазин из Алматы.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=JetBrains+Mono:wght@400;500;700&family=Playfair+Display:ital,wght@1,900&family=Lora:ital,wght@0,400;0,600;1,400;1,600&display=swap&subset=cyrillic">
+  <script>try{if(sessionStorage.getItem("royale-tr"))document.documentElement.className="tr-in"}catch(e){}</script>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body data-cat="hats">
+<div class="app">
+  <div class="promo">Бесплатная доставка при заказе от 120 €</div>
+
+  <header class="bar">
+    <button class="clockbtn" id="clockBtn" type="button" aria-expanded="false" aria-label="Открыть время и погоду">
+      <span class="face" aria-hidden="true"><i class="h" id="hh"></i><i class="m" id="mm"></i></span>
+      <span class="t" id="clockTxt">--:--</span>
+    </button>
+    <div class="brand" aria-label="royale"><svg id="logo" viewBox="0 -1 12 12" shape-rendering="crispEdges" aria-hidden="true"></svg>royale</div>
+    <div class="right">
+      <button class="hbtn" id="accBtn" type="button" aria-expanded="false" aria-label="Войти или открыть аккаунт"><span class="hic" id="accIc"><svg viewBox="0 0 44 44" fill="none" stroke="#1b1c1d" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true"><circle cx="22" cy="15" r="7" fill="#e4e4e2"/><path d="M8 38c0-8 6-13 14-13s14 5 14 13z" fill="#e4e4e2"/></svg></span><span class="hl" id="accTxt">Войти</span></button>
+      <button class="hbtn" id="reqBtn" type="button" aria-expanded="false" aria-label="Оставить заявку"><span class="hic"><svg viewBox="0 0 44 44" fill="none" stroke="#1b1c1d" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="34" height="24" rx="2" fill="#e4e4e2"/><path d="M5 12l17 13 17-13"/></svg></span><span class="hl">Заявка</span></button>
+      <button class="bagbtn" id="bagTop" type="button"><span class="tag">-10%</span><span id="bagTopTxt">Корзина (0)</span></button>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="stage" aria-label="Выбранный товар">
+      <div class="checker"></div>
+      <div class="cat" role="group" aria-label="Раздел"><a href="index.html" data-go data-dir="-1" data-label="Очки">Очки</a><a href="hats.html" data-go data-dir="1" data-label="Шапки" aria-current="page">Шапки</a></div>
+      <div class="scene" id="scene">
+        <div class="hero" id="hero"></div>
+        <div class="toast" id="toast" role="status"></div>
+        <button type="button" class="navbtn prev" id="prevP" aria-label="Предыдущий товар" hidden>&#8249;</button>
+        <button type="button" class="navbtn next" id="nextP" aria-label="Следующий товар" hidden>&#8250;</button>
+        <div class="mode" role="group" aria-label="Режим просмотра">
+          <button type="button" id="m3d" aria-pressed="true">3D</button>
+          <button type="button" id="mar" aria-pressed="false">AR</button>
+        </div>
+      </div>
+      <div class="info">
+        <div class="row"><span id="iName">Скоро</span><span id="iPrice">— €</span></div>
+        <button class="buy" id="buy" type="button" disabled>Скоро в продаже</button>
+      </div>
+    </section>
+
+    <aside class="side" id="side" aria-label="О товаре">
+      <h1 class="tagline">Скоро. <em>Совсем скоро.</em></h1>
+      <div class="buyrow">
+        <button class="try" type="button" id="tryAr" disabled>
+          <svg viewBox="0 0 44 44" fill="none" stroke="#1b1c1d" stroke-width="1.8" aria-hidden="true"><g transform="translate(0 6)"><rect x="3" y="4" width="38" height="24" rx="3" fill="#e4e4e2"/><path d="M3 10h38M10 4v6"/></g></svg>
+          <span>Примерить в AR</span>
+        </button>
+        <span class="sep" aria-hidden="true"></span>
+        <button class="pill" type="button" id="pill" disabled><span id="pillTxt">Купить</span><span aria-hidden="true">+</span></button>
+      </div>
+      <ul class="specs" id="specs"></ul>
+      <section class="grid" id="grid" aria-label="Все товары"></section>
+    </aside>
+  </main>
+
+  <nav class="dock" aria-label="Окна с информацией">
+    <button type="button" data-win="why" aria-expanded="false">
+      <svg viewBox="0 0 44 44" fill="none" stroke="#1b1c1d" stroke-width="1.6" aria-hidden="true"><g transform="translate(0 3)"><path d="M22 3l5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1z" fill="#e4e4e2"/></g></svg>
+      Почему Royale
+    </button>
+    <button type="button" data-win="about" aria-expanded="false">
+      <svg viewBox="0 -1 12 12" shape-rendering="crispEdges" aria-hidden="true" id="dockBird"></svg>
+      О нас
+    </button>
+    <button type="button" data-win="ship" aria-expanded="false">
+      <svg viewBox="0 0 44 44" fill="none" stroke="#1b1c1d" stroke-width="1.6" aria-hidden="true"><g transform="translate(0 3)"><rect x="3" y="10" width="26" height="17" fill="#e4e4e2"/><path d="M29 15h7l5 6v6H29z" fill="#e4e4e2"/><circle cx="12" cy="30" r="4" fill="#1b1c1d"/><circle cx="34" cy="30" r="4" fill="#1b1c1d"/><path d="M8 16h14M8 21h9"/></g></svg>
+      Доставка
+    </button>
+    <button type="button" data-win="bag" aria-expanded="false">
+      <svg viewBox="0 0 44 44" fill="none" stroke="#1b1c1d" stroke-width="1.6" aria-hidden="true"><g transform="translate(0 3)"><path d="M8 13h28l-2 22H10z" fill="#e4e4e2"/><path d="M15 17v-5a7 7 0 0 1 14 0v5"/></g></svg>
+      Корзина
+      <span class="n" id="dockN" hidden>0</span>
+    </button>
+    <button type="button" data-win="arcade" aria-expanded="false">
+      <svg viewBox="0 0 44 44" fill="none" stroke="#1b1c1d" stroke-width="1.6" aria-hidden="true"><g transform="translate(0 3)"><rect x="3" y="9" width="38" height="22" rx="8" fill="#e4e4e2"/><path d="M13 16v8M9 20h8"/><circle cx="29" cy="18" r="2.2" fill="#1b1c1d"/><circle cx="35" cy="23" r="2.2" fill="#1b1c1d"/></g></svg>
+      Скучно?
+    </button>
+    <button type="button" data-chess aria-haspopup="dialog">
+      <span id="dockChess" aria-hidden="true"></span>
+      Шахматы
+    </button>
+  </nav>
+
+  <footer class="foot"><span>© Royale Almaty <span id="year">2026</span></span><span>Подписка &nbsp; Доставка</span></footer>
+</div>
+<div id="layer"></div>
+<button type="button" class="secret" id="secretBtn" aria-label="Сюрприз" title=""></button>
+<div class="big-screen" id="bigScreen" role="dialog" aria-label="Сюрприз" hidden tabindex="-1"><div class="big-txt">ЗАФАР ЛОХ</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.76.0/dist/umd/supabase.js"></script>
+<script src="js/pieces.js"></script>
+<script src="js/data.js"></script>
+<script src="js/arcade.js"></script>
+<script src="js/main.js"></script>
+<script src="js/chess.js"></script>
+<script src="js/transition.js"></script>
+</body>
+</html>

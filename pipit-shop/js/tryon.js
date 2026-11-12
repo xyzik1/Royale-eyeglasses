@@ -19,7 +19,18 @@ const FACE_MODEL = "https://storage.googleapis.com/mediapipe-models/face_landmar
 /* ---- настройки посадки (метры) ---- */
 const FACE_WIDTH = 0.145;                          // ширина лица между точками 234 и 454
 const MODEL_ANCHOR = new THREE.Vector3(0, 0.024, 0.062); // точка очков, которая встаёт на переносицу
-const HEAD = { x: 0.066, y: 0.115, z: 0.095, cy: -0.015, cz: -0.095 }; // полуоси и центр «головы»-окклюдера
+const HEAD = { x: 0.066, y: 0.115, z: 0.095, cy: -0.015, cz: -0.095 }; // полуоси и центр «головы»-окклюдера (очки)
+/* Шапки. Модель: метры, начало координат в центре нижнего края (там, где голова входит в шапку), +Z вперёд.
+   Система лица: начало на переносице (между глазами), y вверх, z к камере.
+   HAT_BASE: где стоит центр нижнего края шапки. Лоб на 3 см выше глаз, центр черепа примерно на 10 см позади переносицы.
+   tilt (градусы): шапка сидит чуть наклонённой, спереди ниже, сзади выше. */
+const HAT_BASE = { y: 0.03, z: -0.098, tilt: 4 };
+const HAT_HEAD = { x: 0.072, y: 0.118, z: 0.098, cy: 0.005, cz: -0.098 };   // череп для шапок: по ширине лица, чуть выше и глубже
+/* сглаживание: у шапки рычаг длиннее, поэтому дрожание точек лица на ней заметнее */
+const SMOOTH = {
+  glasses: { pos: [1.0, 0.03], scale: [0.8, 0.005], quat: [1.6, 8] },
+  hat: { pos: [0.8, 0.02], scale: [0.6, 0.004], quat: [1.1, 6] }
+};
 
 /* индексы точек лица MediaPipe */
 const L_SIDE_A = 234, L_SIDE_B = 454, L_TOP = 10, L_CHIN = 152, L_BRIDGE_A = 168, L_BRIDGE_B = 6, L_NOSE_TIP = 1;
@@ -39,7 +50,9 @@ function loadModel(url) {
    - металл (metalness > 0.5): логотипы, шарниры, декор: чёткие блики
    - всё остальное считаем оправой: глянцевый ацетат с лаковым слоем */
 const LENS_RE = /lens|glass|линз|стекл/i;
-const DECAL_RE = /print|logo|decal|label|text|принт|логотип/i;   // нанесения (текстуры с прозрачностью) не считаем стеклом
+const FABRIC_RE = /knit|fabric|wool|cloth|вяз|ткан|шерст/i;   // трикотаж: матовый, без лака
+const DECAL_RE = /print|logo|decal|label|text|принт|логотип/i;
+const FUR_RE = /fur|мех|shell/i;                          // мех из слоёв-оболочек: матовый, с мягким блеском по краям   // нанесения (текстуры с прозрачностью) не считаем стеклом
 function toPhysical(m) {
   if (m.isMeshPhysicalMaterial) return m;
   const n = new THREE.MeshPhysicalMaterial();
@@ -49,18 +62,30 @@ function toPhysical(m) {
   n.normalMap = m.normalMap || null;
   n.roughnessMap = m.roughnessMap || null;
   n.metalnessMap = m.metalnessMap || null;
+  if (m.normalScale) n.normalScale.copy(m.normalScale);
   n.roughness = m.roughness != null ? m.roughness : 0.5;
   n.metalness = m.metalness != null ? m.metalness : 0;
   n.transparent = m.transparent; n.opacity = m.opacity; n.alphaTest = m.alphaTest; n.side = m.side;
   return n;
 }
-function upgradeMaterial(m, look) {
+function upgradeMaterial(m, look, meshName) {
   if (m.userData && m.userData.pipit) return m;
   const n = toPhysical(m);
   n.userData = Object.assign({}, n.userData, { pipit: true });
   const isDecal = DECAL_RE.test(m.name || "") || (!!m.map && m.transparent);
   const isLens = !isDecal && LENS_RE.test(m.name || "");
-  if (isLens) {
+  const isFur = !isDecal && !isLens && (FUR_RE.test(meshName || "") || FUR_RE.test(m.name || ""));
+  const isFabric = !isDecal && !isLens && !isFur && (FABRIC_RE.test(m.name || "") || (m.sheen !== undefined && m.sheen > 0));
+  if (isFur) {
+    /* слои меха уже заданы цветом и альфа-маской в модели. Нельзя красить как лак: убираем глянец, добавляем ворсовый блик */
+    n.userData.fur = true;
+    n.metalness = 0; n.roughness = 1; n.clearcoat = 0; n.specularIntensity = 0.35;
+    n.envMapIntensity = 0.55;
+    n.sheen = 0.45; n.sheenRoughness = 0.6;
+    if (n.alphaTest > 0) n.alphaToCoverage = true;     // пряди-карточки: сглаживаем края маски через MSAA, мех не «рассыпается» на расстоянии
+    if (n.sheenColor) n.sheenColor.setRGB(0.16, 0.16, 0.18);
+    if (n.map) n.map.anisotropy = 8;
+  } else if (isLens) {
     n.userData.lens = true;
     const ll = 0.2126 * n.color.r + 0.7152 * n.color.g + 0.0722 * n.color.b;
     if (ll < 0.01) n.color.setRGB(0.018, 0.021, 0.026);   // почти чёрное стекло оживляем серо-синим оттенком; цветное (зелёное) не трогаем
@@ -84,6 +109,12 @@ function upgradeMaterial(m, look) {
     n.clearcoat = 0;
     n.envMapIntensity = shiny ? 1.7 : 1.0;
     if (n.map) n.map.anisotropy = 16;
+  } else if (isFabric) {
+    /* вязаная ткань: матовая, с мягким ворсовым бликом (sheen), без лака. Чёрный чуть поднимаем, чтобы читалась фактура */
+    n.metalness = 0; n.roughness = 1; n.clearcoat = 0; n.envMapIntensity = 0.9;
+    const fl = 0.2126 * n.color.r + 0.7152 * n.color.g + 0.0722 * n.color.b;
+    if (fl < 0.02) n.color.setRGB(0.022, 0.022, 0.025);
+    if (n.sheenColor) { n.sheen = 1; n.sheenRoughness = 0.55; n.sheenColor.setRGB(0.3, 0.3, 0.34); }
   } else if (n.metalness > 0.5) {
     n.roughness = Math.min(Math.max(n.roughness, 0.14), 0.32);
     n.envMapIntensity = 1.7;
@@ -97,7 +128,7 @@ function upgradeMaterial(m, look) {
     n.specularIntensity = 1;
     n.envMapIntensity = 1.35;
   }
-  [n.map, n.normalMap, n.roughnessMap, n.metalnessMap].forEach((t) => { if (t) t.anisotropy = 16; });
+  if (!isFur) [n.map, n.normalMap, n.roughnessMap, n.metalnessMap].forEach((t) => { if (t) t.anisotropy = 16; });
   n.needsUpdate = true;
   return n;
 }
@@ -106,10 +137,14 @@ function enhanceModel(root, look) {
   root.traverse((o) => {
     if (!o.isMesh || !o.material) return;
     const many = Array.isArray(o.material);
-    const out = (many ? o.material : [o.material]).map((m) => upgradeMaterial(m, look));
+    const out = (many ? o.material : [o.material]).map((m) => upgradeMaterial(m, look, o.name || (o.parent && o.parent.name)));
     o.material = many ? out : out[0];
     const hasLens = out.some((m) => m.userData.lens);
     const hasDecal = out.some((m) => m.userData.decal);
+    if (out.some((m) => m.userData.fur)) {
+      const k = /(\d+)\s*$/.exec(o.name || "");
+      o.userData.furLayer = k ? parseInt(k[1], 10) : 0;   // номер слоя меха: на слабых телефонах часть слоёв отключаем
+    }
     if (hasLens) o.renderOrder = 3;               // стекло рисуем после оправы
     else if (hasDecal) o.renderOrder = 4;         // нанесения поверх стекла и оправы         // логотипы и прочие полупрозрачные детали
     o.castShadow = o.receiveShadow = false;
@@ -164,10 +199,11 @@ function fitDist(size, aspect, fov) {
   const t = Math.tan((fov * Math.PI) / 360);
   return Math.max((Math.max(size.x, size.z) * 0.6) / (t * aspect), (size.y * 0.8) / t) + size.z * 0.5;
 }
+function smooth01(a, b, x) { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
 function userError(msg) { return Object.assign(new Error(msg), { userMessage: msg }); }
 
 /* ---------- миниатюра для карточек ---------- */
-export async function thumbnail(url, w = 720, h = 480) {
+export async function thumbnail(url, w = 640, h = 640, zoom = 1) {   // квадрат 1:1, как и все иконки на сайте
   const src = await loadModel(url);
   const canvas = document.createElement("canvas");
   const r = makeRenderer(canvas, { preserveDrawingBuffer: true });
@@ -181,7 +217,7 @@ export async function thumbnail(url, w = 720, h = 480) {
   model.position.sub(box.getCenter(new THREE.Vector3()));
   scene.add(model);
   const cam = new THREE.PerspectiveCamera(28, w / h, 0.01, 10);
-  const d = fitDist(size, w / h, 28);
+  const d = fitDist(size, w / h, 28) / zoom;
   cam.position.set(Math.sin(0.55) * d, 0.2 * d, Math.cos(0.55) * d);
   cam.lookAt(0, 0, 0);
   r.render(scene, cam);
@@ -194,6 +230,7 @@ export async function thumbnail(url, w = 720, h = 480) {
 /* ---------- 3D-просмотр ---------- */
 export function mountViewer(container, product, hooks) {
   hooks = hooks || {};
+  const ZOOM = Math.max(0.5, Math.min(2, (product.view && product.view.zoom) || 1));
   let dead = false, raf = 0, ro = null, controls = null, renderer = null, env = null, resume = 0;
   const canvas = document.createElement("canvas");
   canvas.className = "viewer";
@@ -243,7 +280,7 @@ export function mountViewer(container, product, hooks) {
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      const d = fitDist(size, camera.aspect, 28);
+      const d = fitDist(size, camera.aspect, 28) / ZOOM;     // product.view.zoom: товар крупнее в кадре
       if (camera.position.lengthSq() === 0) camera.position.copy(dir).multiplyScalar(d);
       else camera.position.setLength(d);
     };
@@ -312,8 +349,10 @@ function cameraMessage(e) {
 export function mountTryOn(container, product, hooks) {
   hooks = hooks || {};
   const say = (t) => { if (hooks.onStatus) hooks.onStatus(t); };
-  const ar = Object.assign({ scale: 1, x: 0, y: 0, z: 0 }, product.ar || {});
-  let dead = false, raf = 0, ro = null, stream = null, renderer = null, env = null, box = null, tune = null, shadowMat = null;
+  const HAT = product.kind === "hat";
+  const ar = Object.assign({ scale: 1, x: 0, y: 0, z: 0 }, HAT ? { tilt: HAT_BASE.tilt } : {}, product.ar || {});
+  const HH = HAT ? HAT_HEAD : HEAD;
+  let dead = false, raf = 0, ro = null, stream = null, renderer = null, env = null, box = null, tune = null, shadowMat = null, browShadowMat = null;
 
   const dispose = () => {
     dead = true;
@@ -322,6 +361,7 @@ export function mountTryOn(container, product, hooks) {
     if (stream) stream.getTracks().forEach((t) => t.stop());
     if (env) env.dispose();
     if (shadowMat) { if (shadowMat.map) shadowMat.map.dispose(); shadowMat.dispose(); }
+    if (browShadowMat) { if (browShadowMat.map) browShadowMat.map.dispose(); browShadowMat.dispose(); }
     if (renderer) killRenderer(renderer);
     if (box) box.remove();
     if (tune) tune.remove();
@@ -375,12 +415,12 @@ export function mountTryOn(container, product, hooks) {
     glasses.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
     root.add(glasses);
     const head = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), new THREE.MeshBasicMaterial({ colorWrite: false }));
-    head.scale.set(HEAD.x, HEAD.y, HEAD.z);
-    head.position.set(0, HEAD.cy, HEAD.cz);
+    head.scale.set(HH.x, HH.y, HH.z);
+    head.position.set(0, HH.cy, HH.cz);
     head.renderOrder = -1;
     root.add(head);
     /* мягкая тень от очков на лице: тёмные размытые пятна под линзами и у переносицы */
-    if (ar.shadow !== false) {
+    if (ar.shadow !== false && !HAT) {
       const cv = document.createElement("canvas");
       cv.width = 512; cv.height = 256;
       const c = cv.getContext("2d");
@@ -399,8 +439,56 @@ export function mountTryOn(container, product, hooks) {
       shadow.renderOrder = 0;
       root.add(shadow);
     }
-    const place = () => glasses.position.set(-MODEL_ANCHOR.x + ar.x, -MODEL_ANCHOR.y + ar.y, -MODEL_ANCHOR.z + ar.z);
+    /* тень от шапки на лбу: мягкая тёмная полоса под краем, как от настоящего козырька или отворота.
+       Рисуется на тонкой оболочке вокруг черепа, поэтому повторяет изгиб лба и поворачивается вместе с головой */
+    const flapNodes = HAT ? ["hinge_flapL", "hinge_flapR"].map((n) => glasses.getObjectByName(n)).filter(Boolean) : [];
+    const sideShadow = ar.sideShadow != null ? ar.sideShadow : (flapNodes.length ? 0.5 : 0);   // тень от «ушей» на щеках
+    if (HAT && ar.shadow !== false) {
+      const W = 256, Hh = 256, cv = document.createElement("canvas");
+      cv.width = W; cv.height = Hh;
+      const c = cv.getContext("2d"), img = c.createImageData(W, Hh);
+      const yb = HAT_BASE.y + (ar.y || 0) + (ar.browY != null ? ar.browY : 0.012);   // нижний край шапки на лбу
+      for (let r = 0; r < Hh; r++) {
+        const th = (Math.PI * (r + 0.5)) / Hh;
+        const y = HAT_HEAD.cy + HAT_HEAD.y * Math.cos(th);
+        const d = yb - y;                                    // ниже края шапки: > 0
+        const vert = d <= 0 ? 0 : Math.exp(-Math.pow(d / 0.02, 1.4));
+        for (let q = 0; q < W; q++) {
+          const ph = (2 * Math.PI * (q + 0.5)) / W;
+          const front = Math.max(0, Math.cos(ph - Math.PI / 2));   // у лба сильнее, к вискам слабее
+          let a = vert * Math.pow(front, 1.6);
+          if (sideShadow > 0) {                                  // у висков и щёк под «ухом»: тень плотнее к краю лица
+            const sd = Math.pow(Math.abs(Math.cos(ph)), 2.4);
+            const lowY = smooth01(-0.11, -0.045, y) * (1 - smooth01(yb - 0.035, yb + 0.004, y));
+            a = Math.max(a, sideShadow * sd * lowY);
+          }
+          const o = (r * W + q) * 4;
+          img.data[o] = 12; img.data[o + 1] = 8; img.data[o + 2] = 6; img.data[o + 3] = Math.round(255 * a);
+        }
+      }
+      c.putImageData(img, 0, 0);
+      const tex = new THREE.CanvasTexture(cv);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      browShadowMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.55, depthWrite: false });
+      const brow = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), browShadowMat);
+      brow.scale.set(HAT_HEAD.x + 0.0015, HAT_HEAD.y + 0.0015, HAT_HEAD.z + 0.0015);
+      brow.position.set(0, HAT_HEAD.cy, HAT_HEAD.cz);
+      brow.renderOrder = 1;
+      root.add(brow);
+    }
+    const place = () => {
+      if (HAT) {
+        glasses.position.set(ar.x, HAT_BASE.y + ar.y, HAT_BASE.z + ar.z);
+        glasses.rotation.set((ar.tilt * Math.PI) / 180, 0, 0);   // спереди ниже, сзади выше
+      } else {
+        glasses.position.set(-MODEL_ANCHOR.x + ar.x, -MODEL_ANCHOR.y + ar.y, -MODEL_ANCHOR.z + ar.z);
+      }
+    };
     place();
+    /* на телефонах для лёгкости рисуем каждый второй слой меха (мех чуть реже, но выглядит так же) */
+    if (HAT && /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent || "")) {
+      glasses.traverse((o) => { if (o.isMesh && o.userData.furLayer != null && o.userData.furLayer % 2 === 1 && o.userData.furLayer < 25) o.visible = false; });
+    }
 
     const fit = () => {
       const cw = Math.max(1, container.clientWidth), ch = Math.max(1, container.clientHeight);
@@ -415,12 +503,43 @@ export function mountTryOn(container, product, hooks) {
 
     /* поза по точкам лица */
     const P = (lm, i) => new THREE.Vector3((lm[i].x - 0.5) * vw, (0.5 - lm[i].y) * vh, -lm[i].z * vw);
-    const fPos = [new OneEuro(1.0, 0.03), new OneEuro(1.0, 0.03), new OneEuro(1.0, 0.03)];
-    const fScale = new OneEuro(0.8, 0.005);
-    const fQuat = [0, 1, 2, 3].map(() => new OneEuro(1.6, 8));
+    const SM = HAT ? SMOOTH.hat : SMOOTH.glasses;
+    const fPos = [0, 1, 2].map(() => new OneEuro(SM.pos[0], SM.pos[1]));
+    const fScale = new OneEuro(SM.scale[0], SM.scale[1]);
+    const fQuat = [0, 1, 2, 3].map(() => new OneEuro(SM.quat[0], SM.quat[1]));
     const prevQ = new THREE.Quaternion();
     let hasPrev = false;
-    const resetFilters = () => { fPos.forEach((f) => f.reset()); fScale.reset(); fQuat.forEach((f) => f.reset()); hasPrev = false; };
+    /* «уши» ушанки: полужёсткие, висят под действием силы тяжести и чуть запаздывают за движением головы.
+       В модели у них есть узлы-шарниры hinge_flapL/R; считаем, куда смотрит «вниз» в системе шапки, и качаем ухо пружиной */
+    const flaps = flapNodes.map((h) => ({ h, a: [0, 0], v: [0, 0] }));
+    let flapReset = true, flapT = 0;
+    const gv = new THREE.Vector3(), gq = new THREE.Quaternion(), hatQ = new THREE.Quaternion();
+    const hang = (q, out) => {
+      gq.copy(q).invert();
+      gv.set(0, -1, 0).applyQuaternion(gq);
+      out[0] = Math.atan2(gv.x, -gv.y);        // крен: вбок
+      out[1] = Math.atan2(-gv.z, -gv.y);       // наклон: вперёд или назад
+    };
+    const baseHang = [0, 0], curHang = [0, 0];
+    const updateFlaps = (t) => {
+      if (!flaps.length) return;
+      const dt = Math.min(0.05, Math.max(0.001, t - flapT)); flapT = t;
+      hang(glasses.quaternion, baseHang);                          // поза покоя: голова прямо
+      hatQ.copy(root.quaternion).multiply(glasses.quaternion);
+      hang(hatQ, curHang);
+      const k = ar.flapSwing != null ? ar.flapSwing : 0.55, lim = 0.5;
+      const tg = [0, 1].map((i) => Math.max(-lim, Math.min(lim, k * (curHang[i] - baseHang[i]))));
+      flaps.forEach((f) => {
+        for (let i = 0; i < 2; i++) {
+          if (flapReset) { f.a[i] = tg[i]; f.v[i] = 0; continue; }
+          f.v[i] += (70 * (tg[i] - f.a[i]) - 7.5 * f.v[i]) * dt;   // пружина с лёгким затуханием: небольшой «подпрыг»
+          f.a[i] += f.v[i] * dt;
+        }
+        f.h.rotation.set(f.a[1], 0, f.a[0]);
+      });
+      flapReset = false;
+    };
+    const resetFilters = () => { fPos.forEach((f) => f.reset()); fScale.reset(); fQuat.forEach((f) => f.reset()); hasPrev = false; flapReset = true; };
 
     const applyPose = (lm, t) => {
       const xa = P(lm, L_SIDE_B).sub(P(lm, L_SIDE_A));
@@ -459,6 +578,7 @@ export function mountTryOn(container, product, hooks) {
         expo += (target - expo) * 0.25;
         renderer.toneMappingExposure = expo;
         if (shadowMat) shadowMat.opacity = 0.2 + 0.18 * Math.min(1, lum * 1.4);   // при ярком свете тень плотнее
+        if (browShadowMat) browShadowMat.opacity = 0.35 + 0.3 * Math.min(1, lum * 1.4);
       } catch (e) { /* без подстройки света */ }
     };
 
@@ -476,6 +596,7 @@ export function mountTryOn(container, product, hooks) {
           if (lost > 8) resetFilters();
           lost = 0;
           applyPose(lm, now / 1000);
+          updateFlaps(now / 1000);
           if (!root.visible) { root.visible = true; say(""); }
         } else if (++lost > 8 && root.visible) {
           root.visible = false;
@@ -492,9 +613,10 @@ export function mountTryOn(container, product, hooks) {
       tune = document.createElement("div");
       tune.className = "tune";
       const rows = [["scale", "размер", 0.7, 1.4, 0.01], ["x", "влево/вправо", -0.03, 0.03, 0.001], ["y", "вверх/вниз", -0.04, 0.04, 0.001], ["z", "вперёд/назад", -0.04, 0.04, 0.001]];
+      if (HAT) rows.push(["tilt", "наклон, °", -12, 24, 0.5]);
       const out = document.createElement("input");
       out.readOnly = true;
-      const show = () => { out.value = "ar: { scale: " + ar.scale.toFixed(2) + ", x: " + ar.x.toFixed(3) + ", y: " + ar.y.toFixed(3) + ", z: " + ar.z.toFixed(3) + " }"; };
+      const show = () => { out.value = "ar: { scale: " + ar.scale.toFixed(2) + ", x: " + ar.x.toFixed(3) + ", y: " + ar.y.toFixed(3) + ", z: " + ar.z.toFixed(3) + (HAT ? ", tilt: " + ar.tilt.toFixed(1) : "") + " }"; };
       rows.forEach((r) => {
         const l = document.createElement("label");
         l.textContent = r[1];

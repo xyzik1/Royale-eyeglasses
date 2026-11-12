@@ -3,7 +3,9 @@
   "use strict";
 
   var CFG = window.PIPIT;
-  var PRODUCTS = CFG.products;
+  var ALL = CFG.products;
+  var CAT = document.body.getAttribute("data-cat") || "glasses";
+  var PRODUCTS = ALL.filter(function (p) { return (p.cat || "glasses") === CAT; });
 
   var BIRD = ["...XXXX.....", "..XXXXXXX...", "..XXX.XXXXX.", "..XXXXXXX...", ".XXXXXXXX...", "XXXXXXXXX...", ".XXXXXXX....", "..XXXXX.....", "...X..X.....", "..XX..XX...."];
   function birdRects(fill) {
@@ -23,13 +25,25 @@
 
   $("logo").innerHTML = birdRects("#1b1c1d");
   $("dockBird").innerHTML = birdRects("#1b1c1d");
+  if ($("dockChess") && window.RoyalePieces) $("dockChess").innerHTML = window.RoyalePieces.svg("n", "b");   // конь на иконке кнопки «Шахматы» в доке
   $("year").textContent = new Date().getFullYear();
 
-  var state = { sel: PRODUCTS.length ? PRODUCTS[0].id : null, mode: "3d", bag: {} };
+  var state = { sel: PRODUCTS.length ? PRODUCTS[0].id : null, mode: "3d", bag: loadBag() };
+  /* корзина общая для «Очков» и «Шапок»: хранится в браузере, чтобы пережить переход */
+  var BAG_KEY = "royale-bag";
+  function loadBag() {
+    var out = {};
+    try {
+      var b = JSON.parse(localStorage.getItem(BAG_KEY) || "{}");
+      for (var k in b) if (byId(k) && b[k] > 0) out[k] = b[k];
+    } catch (e) { /* пустая корзина */ }
+    return out;
+  }
+  function saveBag() { try { localStorage.setItem(BAG_KEY, JSON.stringify(state.bag)); } catch (e) { /* без записи */ } }
   var grid = $("grid"), hero = $("hero"), toastEl = $("toast"), toastTimer;
   var wins = {};
 
-  function byId(id) { return PRODUCTS.filter(function (p) { return p.id === id; })[0]; }
+  function byId(id) { return ALL.filter(function (p) { return p.id === id; })[0]; }
 
   function toast(msg) {
     toastEl.textContent = msg;
@@ -48,7 +62,7 @@
     var html = "";
     PRODUCTS.forEach(function (p) {
       html += '<article class="card' + (p.id === state.sel ? " sel" : "") + '">' +
-        '<button class="pic" type="button" data-pick="' + esc(p.id) + '" aria-label="Показать: ' + esc(p.name) + '">' + productImg(p) + '</button>' +
+        '<button class="pic" type="button" data-pick="' + esc(p.id) + '" aria-label="Показать: ' + esc(p.name) + '">' + (productImg(p) || '<span class="ph"></span>') + '</button>' +
         '<div class="meta"><span>' + esc(p.name) + '</span>' + (p.model ? '<span class="ar">В <b>AR</b></span>' : "<span></span>") + '<span>' + money(p.price) + '</span></div>' +
         '<button class="add" type="button" data-add="' + esc(p.id) + '"' + (p.stock ? "" : " disabled") + '>' + (p.stock ? "В корзину" : "Нет в наличии") + '</button></article>';
     });
@@ -98,7 +112,7 @@
     var p = state.sel ? byId(state.sel) : null;
     var buy = $("buy"), pill = $("pill"), tryAr = $("tryAr");
     if (!p) {
-      hero.innerHTML = '<div class="empty-state"><svg viewBox="0 0 12 10" shape-rendering="crispEdges" aria-hidden="true">' + birdRects("#1b1c1d") + '</svg>' +
+      hero.innerHTML = '<div class="empty-state"><svg viewBox="0 -1 12 12" shape-rendering="crispEdges" aria-hidden="true">' + birdRects("#1b1c1d") + '</svg>' +
         '<h2>Здесь пока пусто</h2><p>Скоро появится первый товар. Загляните позже.</p></div>';
       $("iName").textContent = "Скоро";
       $("iPrice").textContent = "— " + CFG.currency;
@@ -145,6 +159,7 @@
     return t;
   }
   function updateBagUI() {
+    saveBag();
     var n = bagCount();
     $("bagTopTxt").textContent = "Корзина (" + n + ")";
     var dn = $("dockN"); dn.textContent = n; dn.hidden = n === 0;
@@ -175,6 +190,8 @@
     mar.setAttribute("aria-pressed", m === "ar");
     renderStage();
   }
+  /* шахматы открываются поверх сцены: камеру AR на это время выключаем */
+  document.addEventListener("royale-chess", function (e) { if (e.detail && e.detail.open && state.mode === "ar") setMode("3d"); });
   m3d.addEventListener("click", function () { setMode("3d"); });
   mar.addEventListener("click", function () { setMode("ar"); });
   $("tryAr").addEventListener("click", function () { setMode("ar"); });
@@ -186,6 +203,8 @@
     about: { title: "О нас", w: 480, x: 200, y: 110, build: buildAbout },
     ship: { title: "Доставляем по всему миру", w: 430, x: 420, y: 90, alt: true, build: buildShip },
     bag: { title: "Ваша корзина", w: 400, x: 520, y: 70, build: buildBag },
+    acc: { title: "Аккаунт", w: 400, x: 520, y: 70, build: buildAcc },
+    req: { title: "Оставить заявку", w: 420, x: 480, y: 70, build: buildReq },
     clock: { title: "Время и погода", w: 380, x: 12, y: 56, build: buildClock },
     arcade: { title: "Royale Arcade", w: 340, x: 330, y: 70, cls: "arcade", build: buildArcade }
   };
@@ -219,6 +238,8 @@
   }
   function setExpanded(id, on) {
     if (id === "clock") $("clockBtn").setAttribute("aria-expanded", on);
+    if (id === "req") $("reqBtn").setAttribute("aria-expanded", on);
+    if (id === "acc") $("accBtn").setAttribute("aria-expanded", on);
     var b = document.querySelector('[data-win="' + id + '"]');
     if (b) b.setAttribute("aria-expanded", on);
   }
@@ -286,6 +307,251 @@
       '<div class="note"><b>Международные заказы</b>Таможенные сборы и пошлины назначает страна получателя, платит их получатель. Заранее мы их рассчитать не можем.</div>';
   }
 
+  /* ---------- заявки: пишем в таблицу requests в Supabase ---------- */
+  var SB = CFG.supabase || {};
+  var sb = null, user = null;
+
+  /* Сессия Supabase хранится в куки (а не в localStorage): живёт год, общая для всех страниц сайта.
+     Токен длиннее 4 КБ-лимита одной куки, поэтому режем на куски royale-auth.0, .1, ... */
+  var CK = { size: 1800, days: 365 };
+  function ckGet(name) {
+    var m = document.cookie.match(new RegExp("(?:^|; )" + name.replace(/[.$?*|{}()\[\]\\\/+^]/g, "\\$&") + "=([^;]*)"));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  function ckSet(name, val, days) {
+    var a = "; path=/; SameSite=Lax" + (location.protocol === "https:" ? "; Secure" : "");
+    document.cookie = name + "=" + encodeURIComponent(val) + "; max-age=" + Math.round(days * 86400) + a;
+  }
+  function ckDel(name) { document.cookie = name + "=; path=/; max-age=0; SameSite=Lax"; }
+  var cookieStore = {
+    getItem: function (k) {
+      var n = +ckGet(k + ".n") || 0, s = "", i, p;
+      if (!n) return null;
+      for (i = 0; i < n; i++) { p = ckGet(k + "." + i); if (p == null) return null; s += p; }
+      return s;
+    },
+    setItem: function (k, v) {
+      var old = +ckGet(k + ".n") || 0, n = Math.ceil(v.length / CK.size), i;
+      for (i = 0; i < n; i++) ckSet(k + "." + i, v.slice(i * CK.size, (i + 1) * CK.size), CK.days);
+      for (i = n; i < old; i++) ckDel(k + "." + i);
+      ckSet(k + ".n", String(n), CK.days);
+    },
+    removeItem: function (k) {
+      var n = +ckGet(k + ".n") || 0, i;
+      for (i = 0; i < n; i++) ckDel(k + "." + i);
+      ckDel(k + ".n");
+    }
+  };
+  if (SB.url && SB.anonKey && window.supabase) {
+    try {
+      sb = window.supabase.createClient(SB.url, SB.anonKey, { auth: { storage: cookieStore, storageKey: "royale-auth", persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+    } catch (e) { sb = null; }
+  }
+  var COOLDOWN_KEY = "royale-req-last";
+  function lastReq() { try { return +localStorage.getItem(COOLDOWN_KEY) || 0; } catch (e) { return 0; } }
+  function markReq() { try { localStorage.setItem(COOLDOWN_KEY, String(Date.now())); } catch (e) { /* без записи */ } }
+  function bagItems() {
+    return Object.keys(state.bag).filter(function (k) { return state.bag[k] > 0 && byId(k); }).map(function (k) {
+      var p = byId(k); return { id: p.id, name: p.name, qty: state.bag[k], price: p.price };
+    });
+  }
+  /* общие куски оформления окон «Заявка» и «Аккаунт» */
+  var IC_USER = '<svg viewBox="0 0 44 44" fill="none" stroke="#1b1c1d" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true"><circle cx="22" cy="15" r="7" fill="#e4e4e2"/><path d="M8 38c0-8 6-13 14-13s14 5 14 13z" fill="#e4e4e2"/></svg>';
+  var IC_BIRD = '<svg viewBox="0 -1 12 12" shape-rendering="crispEdges" aria-hidden="true">' + birdRects("#1b1c1d") + "</svg>";
+  var IC_MAIL = '<svg viewBox="0 0 44 44" fill="none" stroke="#1b1c1d" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="34" height="24" rx="2" fill="#fff"/><path d="M5 12l17 13 17-13"/></svg>';
+  var IC_OK = '<svg viewBox="0 0 44 44" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="square" aria-hidden="true"><path d="M10 23l9 9 16-18"/></svg>';
+  function head(icon, title, sub) {
+    return '<div class="wh"><span class="wic">' + icon + '</span><div><h2>' + title + '</h2><p>' + sub + '</p></div></div>';
+  }
+  function field(label, input, hint) {
+    return '<label class="fld"><span class="fl">' + label + '</span>' + input + (hint ? '<span class="fh">' + hint + '</span>' : "") + "</label>";
+  }
+  function bindEye(root) {
+    root.querySelectorAll(".eye").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var i = b.parentNode.querySelector("input"), show = i.type === "password";
+        i.type = show ? "text" : "password"; b.textContent = show ? "скрыть" : "показать"; b.setAttribute("aria-pressed", show);
+      });
+    });
+  }
+  function fmtPhone(v) {            // +7 701 123 45 67
+    var d = v.replace(/\D/g, "");
+    if (!d) return "";
+    if (d[0] === "8") d = "7" + d.slice(1);
+    if (d[0] !== "7" && v.trim()[0] !== "+") d = "7" + d;
+    if (v.trim()[0] === "+" && d[0] !== "7") return "+" + d.slice(0, 15);
+    d = d.slice(0, 11);
+    var o = "+7";
+    if (d.length > 1) o += " " + d.slice(1, 4);
+    if (d.length > 4) o += " " + d.slice(4, 7);
+    if (d.length > 7) o += " " + d.slice(7, 9);
+    if (d.length > 9) o += " " + d.slice(9, 11);
+    return o;
+  }
+  function buildReq(body) {
+    if (!sb) {
+      body.innerHTML = head(IC_MAIL, "База не подключена", "Нужен Supabase") + '<p>Вставьте Project URL и anon key из Supabase в <b>js/data.js</b> (поле <b>supabase</b>). Подробности в README.</p>';
+      return;
+    }
+    var items = bagItems(), list = "";
+    if (items.length) {
+      list = '<div class="rcpt"><div class="rt">Ваш заказ</div>' + items.map(function (i) {
+        return '<div class="rl"><span>' + esc(i.name) + " × " + i.qty + "</span><i></i><b>" + money(i.price * i.qty) + "</b></div>";
+      }).join("") + '<div class="rl sum"><span>Итого</span><i></i><b>' + money(bagSubtotal()) + "</b></div></div>";
+    }
+    var who = user ? '<div class="who">Вы вошли как <b>@' + esc(userNick() || "аккаунт") + "</b>: заявка сохранится в вашем аккаунте</div>" : '<div class="who">Без регистрации. <button type="button" class="lnk" id="reqLogin">Войти</button>, чтобы видеть свои заявки</div>';
+    body.classList.add("fancy");
+    body.innerHTML = head(IC_MAIL, "Оставить заявку", "Оставьте контакты, и мы свяжемся с вами") + who + list +
+      '<form class="fform" id="reqForm" novalidate>' +
+      field("Имя", '<input name="name" type="text" autocomplete="name" maxlength="80" placeholder="Как к вам обращаться" value="' + esc(userName()) + '" required>') +
+      field("Телефон (WhatsApp)", '<input name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="+7 ___ ___ __ __" required>') +
+      field("Комментарий", '<textarea name="comment" rows="3" maxlength="1000" placeholder="Размер, цвет, пожелания (необязательно)"></textarea>') +
+      '<input name="site" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">' +
+      '<p class="fmsg" id="reqMsg" role="status"></p>' +
+      '<button class="gobtn" type="submit"><span>Отправить заявку</span><i aria-hidden="true">&rarr;</i></button></form>';
+    var form = body.querySelector("#reqForm"), msg = body.querySelector("#reqMsg");
+    function say(t, cls) { msg.className = "fmsg" + (cls ? " " + cls : ""); msg.textContent = t; }
+    var lg = body.querySelector("#reqLogin"); if (lg) lg.addEventListener("click", function () { closeWin("req"); openWin("acc"); });
+    form.elements.phone.addEventListener("input", function (e) { e.target.value = fmtPhone(e.target.value); });
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var f = form.elements, name = f.name.value.trim(), phone = f.phone.value.trim(), btn = form.querySelector("button[type=submit]");
+      if (f.site.value) return; /* ловушка для ботов */
+      if (name.length < 2) { say("Введите имя", "err"); f.name.focus(); return; }
+      if (phone.replace(/\D/g, "").length < 10 || !/^[+\d][\d\s()\-]{6,}$/.test(phone)) { say("Введите корректный телефон", "err"); f.phone.focus(); return; }
+      if (Date.now() - lastReq() < 30000) { say("Заявка уже отправлена, подождите немного", "err"); return; }
+      btn.disabled = true; say("Отправляю…");
+      var its = bagItems();
+      sb.from("requests").insert({ user_id: user ? user.id : null, name: name, phone: phone, comment: f.comment.value.trim() || null, items: its.length ? its : null, total: its.length ? bagSubtotal() : null })
+        .then(function (r) {
+          btn.disabled = false;
+          if (r.error) { say("Не удалось отправить. Попробуйте ещё раз или напишите нам напрямую.", "err"); return; }
+          markReq();
+          body.innerHTML = '<div class="done"><span class="tick">' + IC_OK + '</span><h2>Заявка отправлена</h2><p>Спасибо, ' + esc(name) + '! Мы скоро свяжемся с вами по номеру <b>' + esc(phone) + '</b>.</p><button type="button" class="gobtn alt" id="reqClose"><span>Закрыть</span></button></div>';
+          body.querySelector("#reqClose").addEventListener("click", function () { closeWin("req"); });
+        }, function () { btn.disabled = false; say("Нет связи с сервером, проверьте интернет", "err"); });
+    });
+  }
+  $("reqBtn").addEventListener("click", function () { openWin("req"); });
+
+
+  /* ---------- аккаунт: вход по нику (Supabase Auth, сессия в куки) ----------
+     Supabase входит по почте, поэтому ник превращается в служебный адрес ник@authDomain. Настоящая почта не нужна,
+     письма не отправляются (в Supabase должен быть выключен Confirm email). */
+  var AUTH_DOMAIN = CFG.authDomain || "users.royale-shop.app";
+  function nickOk(n) { return /^[a-z0-9][a-z0-9_.-]{2,19}$/.test(n); }
+  function nickMail(n) { return n + "@" + AUTH_DOMAIN; }
+  function userMeta() { return (user && user.user_metadata) || {}; }
+  function userNick() { return userMeta().nick || ((user && user.email) || "").split("@")[0]; }
+  function userName() { return user ? (userMeta().name || userMeta().nick || "") : ""; }
+  function authErr(e) {
+    var t = String((e && e.message) || "").toLowerCase(), c = String((e && (e.code || e.error_code)) || "").toLowerCase(), st = e && e.status;
+    var tail = " [" + (c || st || "ошибка") + "]";                 // код ошибки сервера: по нему видно, что именно сломалось
+    if (c === "invalid_credentials" || t.indexOf("invalid login") >= 0) return "Неверный ник или пароль";
+    if (c === "user_already_exists" || c === "email_exists" || t.indexOf("already") >= 0) return "Этот ник уже занят, выберите другой";
+    if (c === "email_not_confirmed" || t.indexOf("not confirmed") >= 0) return "Вход не подтверждён: в Supabase выключите Confirm email" + tail;
+    if (c === "over_email_send_rate_limit" || t.indexOf("email rate limit") >= 0) return "Упёрлись в лимит писем Supabase: выключите Confirm email" + tail;
+    if (c === "over_request_rate_limit" || st === 429 || t.indexOf("rate") >= 0 || t.indexOf("too many") >= 0) return "Слишком много попыток, подождите минуту" + tail;
+    if (c === "signup_disabled" || t.indexOf("signups not allowed") >= 0) return "Регистрация выключена в Supabase (Authentication → Sign In / Providers → Allow new users to sign up)" + tail;
+    if (c === "email_address_invalid" || c === "validation_failed" || (t.indexOf("email") >= 0 && t.indexOf("invalid") >= 0)) return "Сервер отклонил служебный адрес ник@" + AUTH_DOMAIN + ": у домена нет почтовых MX-записей. Укажите свой домен в js/data.js (authDomain)" + tail;
+    if (c === "weak_password" || t.indexOf("password") >= 0) return "Пароль слишком простой: добавьте символов или цифр" + tail;
+    if (t.indexOf("database error") >= 0 || c === "unexpected_failure") return "Сервер не смог создать профиль: заново запустите db/setup.sql в Supabase" + tail;
+    if (st === 401 || st === 403 || t.indexOf("api key") >= 0) return "Сервер не принял ключ: проверьте url и anonKey в js/data.js" + tail;
+    return "Не получилось, попробуйте ещё раз" + tail;
+  }
+  function updateAccUI() {
+    var b = $("accBtn"); if (!b) return;
+    var nk = user ? userNick() : "";
+    $("accTxt").textContent = user ? "@" + nk : "Войти";
+    $("accIc").innerHTML = user ? '<b class="av">' + esc(nk.charAt(0).toUpperCase()) + "</b>" : IC_USER;
+    b.classList.toggle("on", !!user);
+    b.setAttribute("aria-label", user ? "Аккаунт @" + nk : "Войти или открыть аккаунт");
+    if (wins.acc) { wins.acc.body.innerHTML = ""; buildAcc(wins.acc.body); }
+  }
+  function buildAcc(body) {
+    body.classList.add("fancy");
+    if (!sb) {
+      body.innerHTML = head(IC_BIRD, "База не подключена", "Нужен Supabase") + '<p>Вставьте Project URL и anon key из Supabase в <b>js/data.js</b>. Подробности в README.</p>';
+      return;
+    }
+    if (user) { buildProfile(body); return; }
+    var mode = "in";
+    body.innerHTML = head(IC_BIRD, '<span id="accTtl">С возвращением</span>', '<span id="accSub">Войдите по нику и паролю</span>') +
+      '<div class="seg2" role="tablist"><button type="button" role="tab" data-m="in" aria-selected="true">Вход</button><button type="button" role="tab" data-m="up" aria-selected="false">Регистрация</button></div>' +
+      '<form class="fform" id="authForm" novalidate>' +
+      field("Ник", '<span class="inp"><b class="pre">@</b><input name="nick" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="например, pipit" required></span>', '<span id="nickHint" hidden>3–20 символов: латиница, цифры, _ . -</span>') +
+      field("Пароль", '<span class="inp"><input name="pass" type="password" autocomplete="current-password" maxlength="72" placeholder="минимум 8 символов" required><button type="button" class="eye" aria-pressed="false">показать</button></span>') +
+      '<p class="fmsg" id="authMsg" role="status"></p>' +
+      '<button class="gobtn" type="submit"><span id="goTxt">Войти</span><i aria-hidden="true">&rarr;</i></button></form>' +
+      '<p class="fnote">Вход сохраняется в куки на этом устройстве, пока вы не нажмёте «Выйти». Почта не нужна.</p>';
+    bindEye(body);
+    var form = body.querySelector("#authForm"), msg = body.querySelector("#authMsg"), tabs = body.querySelectorAll(".seg2 button");
+    function say(t, cls) { msg.className = "fmsg" + (cls ? " " + cls : ""); msg.textContent = t; }
+    tabs.forEach(function (t) {
+      t.addEventListener("click", function () {
+        mode = t.getAttribute("data-m");
+        tabs.forEach(function (x) { x.setAttribute("aria-selected", x === t ? "true" : "false"); });
+        body.querySelector("#nickHint").hidden = mode !== "up";
+        body.querySelector("#accTtl").textContent = mode === "up" ? "Создать аккаунт" : "С возвращением";
+        body.querySelector("#accSub").textContent = mode === "up" ? "Придумайте ник и пароль" : "Войдите по нику и паролю";
+        body.querySelector("#goTxt").textContent = mode === "up" ? "Создать аккаунт" : "Войти";
+        form.elements.pass.autocomplete = mode === "up" ? "new-password" : "current-password";
+        say("");
+      });
+    });
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var f = form.elements, nick = f.nick.value.trim().replace(/^@/, "").toLowerCase(), pass = f.pass.value, btn = form.querySelector("button[type=submit]");
+      if (!nickOk(nick)) { say("Ник: 3–20 символов, латиница, цифры, _ . -", "err"); f.nick.focus(); return; }
+      if (pass.length < 8) { say("Пароль: минимум 8 символов", "err"); f.pass.focus(); return; }
+      btn.disabled = true; say(mode === "up" ? "Создаю аккаунт…" : "Вхожу…");
+      var job = mode === "up"
+        ? sb.auth.signUp({ email: nickMail(nick), password: pass, options: { data: { nick: nick, name: nick } } })
+        : sb.auth.signInWithPassword({ email: nickMail(nick), password: pass });
+      job.then(function (r) {
+        btn.disabled = false;
+        if (r.error) { console.error("auth", r.error); say(authErr(r.error), "err"); return; }
+        if (mode === "up" && !r.data.session) { say("Аккаунт создан, но вход не открылся: в Supabase выключите Confirm email.", "err"); return; }
+        toast(mode === "up" ? "Аккаунт создан" : "Вы вошли");
+      }, function (err) { btn.disabled = false; console.error("auth", err); say(err && err.name === "AuthRetryableFetchError" ? "Нет связи с сервером, проверьте интернет" : authErr(err), "err"); });
+    });
+  }
+  var STATUS = { "new": "Новая", "work": "В работе", done: "Выполнена", cancel: "Отменена" };
+  function buildProfile(body) {
+    var nm = userMeta().name || "";
+    body.innerHTML = '<div class="pcard"><span class="wic big">' + IC_BIRD + '</span><div class="pn">@' + esc(userNick()) + '</div><div class="ps">аккаунт Royale</div></div>' +
+      '<form class="fform" id="profForm" novalidate>' + field("Имя для заявок", '<input name="name" type="text" autocomplete="name" maxlength="80" value="' + esc(nm) + '" placeholder="Как к вам обращаться">') +
+      '<p class="fmsg" id="profMsg" role="status"></p><button class="gobtn" type="submit"><span>Сохранить</span></button></form>' +
+      '<div class="sec">Мои заявки</div><div id="myReq" class="mine">Загружаю…</div>' +
+      '<button type="button" class="outbtn" id="outBtn">Выйти из аккаунта</button>';
+    var msg = body.querySelector("#profMsg");
+    body.querySelector("#profForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var v = e.target.elements.name.value.trim(); if (v.length < 2) { msg.className = "fmsg err"; msg.textContent = "Введите имя (минимум 2 символа)"; return; }
+      sb.auth.updateUser({ data: { name: v } }).then(function (r) {
+        if (r.error) { msg.className = "fmsg err"; msg.textContent = "Не удалось сохранить"; return; }
+        sb.from("profiles").update({ name: v }).eq("id", user.id).then(function () { /* профиль обновлён */ });
+        msg.className = "fmsg ok"; msg.textContent = "Сохранено";
+      });
+    });
+    body.querySelector("#outBtn").addEventListener("click", function () { sb.auth.signOut().then(function () { toast("Вы вышли"); }); });
+    sb.from("requests").select("created_at,total,status,items").order("created_at", { ascending: false }).limit(10).then(function (r) {
+      var box = body.querySelector("#myReq"); if (!box) return;
+      if (r.error) { box.textContent = "Не удалось загрузить заявки"; return; }
+      if (!r.data.length) { box.innerHTML = '<div class="empty">Заявок пока нет</div>'; return; }
+      box.innerHTML = r.data.map(function (q) {
+        var d = new Date(q.created_at).toLocaleDateString("ru-RU"), n = (q.items || []).reduce(function (s, i) { return s + i.qty; }, 0);
+        return '<div class="ritem"><div><b>' + d + "</b><span>" + (n ? n + " шт. на " + money(q.total) : "Без товаров") + '</span></div><em data-s="' + esc(q.status) + '">' + esc(STATUS[q.status] || q.status) + "</em></div>";
+      }).join("");
+    });
+  }
+  if (sb) {
+    sb.auth.onAuthStateChange(function (ev, session) {
+      setTimeout(function () { user = session ? session.user : null; updateAccUI(); }, 0);   // не вызываем запросы внутри колбэка
+    });
+  }
+  $("accBtn").addEventListener("click", function () { openWin("acc"); });
+
   function buildArcade(body) {
     wins.arcade.dispose = window.PipitArcade.mount(body, BIRD);
   }
@@ -301,7 +567,7 @@
     var html = "";
     ids.forEach(function (id) {
       var p = byId(id), q = state.bag[id];
-      html += '<div class="line"><div>' + (p.image ? productImg(p) : '<div class="noimg"></div>') + '</div><div><div class="nm">' + esc(p.name) + '</div><div>' + money(p.price) + '</div>' +
+      html += '<div class="line"><div>' + (productImg(p) || '<div class="noimg"></div>') + '</div><div><div class="nm">' + esc(p.name) + '</div><div>' + money(p.price) + '</div>' +
         '<div class="qty"><button type="button" data-dec="' + esc(id) + '" aria-label="Меньше">−</button><span>' + q + '</span><button type="button" data-inc="' + esc(id) + '" aria-label="Больше">+</button></div></div>' +
         '<div><div class="nm">' + money(p.price * q) + '</div><button class="rm" type="button" data-rm="' + esc(id) + '">Удалить</button></div></div>';
     });
@@ -309,7 +575,7 @@
     html += '<div class="total"><span>Подытог</span><span>' + money(sub) + '</span></div>' +
       '<div class="total" style="font-weight:400;font-size:15px;padding-top:0"><span>Доставка (Казахстан)</span><span>' + (ship ? money(ship) : "Бесплатно") + '</span></div>' +
       '<div class="total"><span>Итого</span><span>' + money(sub + ship) + '</span></div>' +
-      '<button class="checkout" type="button" id="co">Оформить заказ</button><p class="small">Демо-магазин: оплата не подключена.</p>';
+      '<button class="checkout" type="button" id="co">Оставить заявку на заказ</button><p class="small">Оплата на сайте не требуется: мы свяжемся и подтвердим заказ.</p>';
     body.innerHTML = html;
   }
   layer.addEventListener("click", function (e) {
@@ -317,7 +583,7 @@
     if (i) state.bag[i.getAttribute("data-inc")]++;
     else if (d) { var k = d.getAttribute("data-dec"); state.bag[k] = Math.max(0, state.bag[k] - 1); }
     else if (r) state.bag[r.getAttribute("data-rm")] = 0;
-    else if (e.target.id === "co") { toast("Оплата пока не подключена"); return; }
+    else if (e.target.id === "co") { closeWin("bag"); if (!wins.req) openWin("req"); return; }
     else return;
     updateBagUI();
   });
@@ -409,7 +675,7 @@
   /* миниатюры карточек делаем из самой 3D-модели, если нет фото */
   PRODUCTS.forEach(function (p) {
     if (!p.model || p.image) return;
-    loadTryon().then(function (m) { return m.thumbnail(p.model); }).then(function (url) {
+    loadTryon().then(function (m) { var zz = (p.view && p.view.zoom) || 1; return m.thumbnail(p.model, 640, 640, 1 + (zz - 1) * 0.5); }).then(function (url) {
       p.thumb = url; renderGrid(); updateBagUI();
     }).catch(function () { /* без миниатюры карточка остаётся пустой */ });
   });

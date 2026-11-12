@@ -18,7 +18,7 @@
     sprite.forEach(function (row, y) {
       for (var x = 0; x < row.length; x++) if (row[x] === "X") r += '<rect x="' + x + '" y="' + y + '" width="1.02" height="1.02" fill="' + fill + '"/>';
     });
-    return '<svg viewBox="0 0 12 10" shape-rendering="crispEdges" aria-hidden="true">' + r + "</svg>";
+    return '<svg viewBox="0 -1 12 12" shape-rendering="crispEdges" aria-hidden="true">' + r + "</svg>";
   }
 
   function mount(body, sprite) {
